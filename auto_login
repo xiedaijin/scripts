@@ -1,0 +1,122 @@
+#!/bin/bash
+
+SHELL=$0
+SHELL_NAME=${SHELL##*/}
+ACCOUNT_FILE=~/.$SHELL_NAME
+
+check_requirement() {
+	oathtool -v >/dev/null 2>&1 && expect -v >/dev/null 2>&1
+}
+
+install_requirement() {
+	brew -v > /dev/null 2>&1 || { echo "require install 'homebrew', you can get 'homebrew' from http://https://brew.sh/"; exit 1; }
+
+	oathtool -v > /dev/null 2>&1 || { echo "oath-toolkit is not installed, now install it."; brew install oath-toolkit; }
+
+	expect -v > /dev/null 2>&1 || { echo "expect is not installed, now install it."; brew install expect; }
+
+	echo "all requirement is installed, please enjoy auto login shell."
+}
+
+set_account() {
+	echo "please input account info:"
+	echo "user:"
+	read user
+	echo "password:"
+	read password
+	echo "remote host:"
+	read host
+	echo "secret_key:"
+	read secret_key
+
+	## -EOF可以忽略制表符
+	cat > $ACCOUNT_FILE <<-EOF 
+		USER=$user
+		PASSWORD=$password
+		HOST=$host
+		SECRET_KEY=$secret_key
+	EOF
+}
+
+login_server() {
+	check_requirement
+	if [ $? != 0 ]; then
+		echo "please run command to install requirement:\n\t \
+			$SHELL_NAME install"
+
+		exit 1
+	fi
+
+	if [ ! -f  $ACCOUNT_FILE ]; then
+		set_account
+	fi
+
+	source $ACCOUNT_FILE
+	VERIFY_CODE=`oathtool --totp -b -d 6 $SECRET_KEY`
+	# expect <<-EOF
+	# 	spawn ssh $USER@$HOST
+	# 	expect {
+	# 		"Verification code:" {
+	# 			send "$VERIFY_CODE\n"
+	# 			exp_continue
+	# 		} "Password:" {
+	# 			send "$PASSWORD\n" 
+	# 			exp_continue
+	# 		} -re "Permission denied" {
+	# 			send_user "login fail, wrong verify code or password\n"
+	# 			exit
+	# 		} -re "Please input your choice" {
+	# 			interact
+	# 		}
+	# 	}
+	# EOF
+
+	expect -c "
+	spawn ssh $USER@$HOST
+	expect {
+		\"Verification code:\" {
+			send \"$VERIFY_CODE\n\"
+			exp_continue
+		} \"Password:\" {
+			send \"$PASSWORD\n\" 
+			exp_continue
+		} -re \"Permission denied\" {
+			send_user \"login fail, wrong verify code or password\n\"
+			exit
+		} -re \"Please input your choice\" {
+			interact
+		}
+	 }
+	"
+}
+
+usage() {
+	echo "usage: $SHELL_NAME [command]"
+	echo "command:"
+	echo "	install 	install requirement"
+	echo "	reset		reset account message"
+	echo "	help		help message"
+}
+
+if [ $# -ge 1 ]; then
+	case $1 in 
+		install)
+		install_requirement
+		exit 0
+		;;
+		reset)
+		set_account
+		exit 0
+		;;
+		help)
+		usage
+		exit 0
+		;;
+		?)
+		echo "unknown parameter"
+		exit 1
+		;;
+	esac
+else
+	login_server
+fi
