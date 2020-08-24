@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/sh
 
 SHELL=$0
 SHELL_NAME=${SHELL##*/}
